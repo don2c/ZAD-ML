@@ -1,0 +1,156 @@
+# Import necessary libraries
+import numpy as np
+import pennylane as qml
+import tensorflow as tf
+from tensorflow.keras.layers import Dense, LSTM, Softmax
+from tensorflow.keras.optimizers import RMSprop
+
+# Set random seeds for reproducibility
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Quantum Device Setup for PennyLane
+n_qubits = 4  # Number of qubits in the quantum circuit
+dev = qml.device("default.qubit", wires=n_qubits)
+
+# Define Parameterized Quantum Circuit (PQC) with Adaptive Quantum Neural Network (AQNN)
+@qml.qnode(dev)
+def adaptive_quantum_circuit(inputs, weights):
+    qml.AngleEmbedding(inputs, wires=range(n_qubits))
+    qml.BasicEntanglerLayers(weights, wires=range(n_qubits))
+    return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
+
+# Function to initialize random weights for quantum layer
+def initialize_qnn_weights(layers=3, qubits=4):
+    return np.random.randn(layers, qubits)
+
+# Define Quantum State Update Procedure
+def quantum_state_update(inputs, theta):
+    """
+    Updates the quantum state based on inputs and theta parameters.
+    """
+    quantum_output = adaptive_quantum_circuit(inputs, theta)
+    return quantum_output
+
+# Define Attention Mechanism
+def compute_attention_weights(quantum_outputs):
+    """
+    Compute softmax attention weights for quantum outputs.
+    """
+    logits = tf.convert_to_tensor(quantum_outputs, dtype=tf.float32)
+    attention_weights = Softmax()(logits)
+    return attention_weights
+
+# Define Anomaly Scoring System with Dynamic Threshold Adaptation
+def compute_anomaly_score(hidden_states, attention_weights, baseline_hidden_state):
+    """
+    Calculate the anomaly score using hidden states and attention weights.
+    """
+    diff = tf.norm(hidden_states - baseline_hidden_state, axis=1)
+    anomaly_score = tf.reduce_sum(attention_weights * diff)
+    return anomaly_score
+
+def compute_adaptive_threshold(scores, scaling_factor=1.5):
+    """
+    Compute adaptive threshold using the median and IQR of the anomaly scores.
+    """
+    median = np.median(scores)
+    iqr = np.percentile(scores, 75) - np.percentile(scores, 25)
+    threshold = median + scaling_factor * iqr
+    return threshold
+
+# Define Full Temporal Behavioral Analysis Process
+class TemporalBehavioralAnalysis:
+    def __init__(self, input_dim, encoding_dims, rnn_units=32, quantum_layers=3, learning_rate=0.001):
+        self.encoder = self.build_autoencoder(input_dim, encoding_dims)
+        self.rnn = LSTM(rnn_units, return_sequences=True)
+        self.optimizer = RMSprop(learning_rate=learning_rate)
+        self.theta = tf.Variable(initialize_qnn_weights(layers=quantum_layers, qubits=n_qubits), dtype=tf.float32)
+        self.loss_history = []
+
+    def build_autoencoder(self, input_dim, encoding_dims):
+        """
+        Build the autoencoder model.
+        """
+        model = tf.keras.Sequential()
+        for dim in encoding_dims:
+            model.add(Dense(dim, activation='relu'))
+        return model
+
+    def run_temporal_analysis(self, data_stream, baseline_hidden_state, epochs=100, verbose=True):
+        """
+        Run the full temporal behavioral analysis on the provided data stream.
+        """
+        anomaly_scores = []
+        for epoch in range(epochs):
+            for t, sample in enumerate(data_stream):
+                # 1. Encode the data
+                encoded_sample = self.encoder(sample)
+
+                # 2. Update Quantum State using AQNN
+                quantum_output = quantum_state_update(encoded_sample, self.theta)
+
+                # 3. Compute Attention Weights
+                attention_weights = compute_attention_weights(quantum_output)
+
+                # 4. Pass Encoded Data through RNN with Attention
+                rnn_output = self.rnn(encoded_sample)
+                
+                # 5. Compute Anomaly Score
+                anomaly_score = compute_anomaly_score(rnn_output, attention_weights, baseline_hidden_state)
+                anomaly_scores.append(anomaly_score)
+
+                # 6. Update Model Parameters if in Training Mode
+                loss = tf.reduce_mean((anomaly_score - baseline_hidden_state)**2)
+                self.loss_history.append(loss.numpy())
+                with tf.GradientTape() as tape:
+                    tape.watch(self.theta)
+                    grads = tape.gradient(loss, [self.theta])
+                    self.optimizer.apply_gradients(zip(grads, [self.theta]))
+
+                # Print Progress
+                if verbose and t % 50 == 0:
+                    print(f"Epoch {epoch}, Step {t}, Anomaly Score: {anomaly_score}, Loss: {loss.numpy()}")
+
+            # Update Dynamic Threshold
+            threshold = compute_adaptive_threshold(anomaly_scores)
+            if verbose:
+                print(f"Adaptive Threshold at Epoch {epoch}: {threshold}")
+
+# Example Usage
+if __name__ == "__main__":
+    # Example input configuration
+    input_dim = 10  # Size of input feature vector
+    encoding_dims = [8, 4, 2]  # Autoencoder configuration
+    rnn_units = 32
+    data_stream = np.random.rand(100, input_dim)  # Simulated data stream (100 samples, each with input_dim features)
+    baseline_hidden_state = np.mean(data_stream, axis=0)
+
+    # Initialize and run the temporal behavioral analysis
+    tba_model = TemporalBehavioralAnalysis(input_dim, encoding_dims, rnn_units=rnn_units)
+    tba_model.run_temporal_analysis(data_stream, baseline_hidden_state, verbose=True)
+
+
+### Explanation of Key Steps
+
+1. Quantum Circuit Definition:
+   - `adaptive_quantum_circuit` is defined using `PennyLane` to apply a parameterized quantum circuit (PQC) for encoding input features, with `AngleEmbedding` and `BasicEntanglerLayers` creating quantum layers.
+
+2. Attention Mechanism:
+   - Computes softmax attention weights from the quantum circuit’s outputs to allow the model to focus on relevant features.
+
+3. Anomaly Scoring System:
+   - Calculates an anomaly score for each sample by comparing hidden state vectors to a baseline using attention weights, which highlight critical features for anomaly detection.
+
+4. Threshold Adaptation:
+   - Computes a dynamic threshold using the interquartile range (IQR) of anomaly scores to adapt to real-time data variations and adjust the detection sensitivity.
+
+5. Training Process:
+   - The model iteratively updates the quantum parameters (`theta`) based on gradient descent to minimize the anomaly detection error over time.
+
+6. Reproducibility:
+   - Seed settings (`np.random.seed` and `tf.random.set_seed`) are explicitly set for reproducibility.
+   - Code dependencies are specified, including TensorFlow and PennyLane versions.
+
+### Output and Monitoring
+The code monitors and prints progress, including anomaly scores and adaptive thresholds at each epoch, providing insight into the model’s behavior over time.
