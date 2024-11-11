@@ -1,0 +1,165 @@
+# Importing Required Libraries
+import numpy as np
+import pandas as pd
+from statsmodels.tsa.arima.model import ARIMA
+from scipy.stats import skew, kurtosis
+
+# Setting a random seed for reproducibility
+np.random.seed(42)
+
+def adaptive_normalize(data):
+    """
+    Normalize each feature in the dataset based on dynamic scaling factors.
+    
+    Parameters:
+    data (pd.DataFrame): Multivariate time series data with columns as features.
+    
+    Returns:
+    pd.DataFrame: Normalized data with adaptive scaling factors applied.
+    """
+    normalized_data = pd.DataFrame()
+    for feature in data.columns:
+        mean_val = data[feature].mean()
+        std_val = data[feature].std()
+        iqr_val = data[feature].quantile(0.75) - data[feature].quantile(0.25)
+        scale_factor = std_val / iqr_val if iqr_val != 0 else 1
+        normalized_data[feature] = (data[feature] - mean_val) / scale_factor
+    return normalized_data
+
+def learn_window_size(data, default_order=(1, 1, 1)):
+    """
+    Determine optimal window size using ARIMA model.
+    
+    Parameters:
+    data (pd.DataFrame): Normalized multivariate time series data.
+    default_order (tuple): ARIMA model order to use if convergence fails (p, d, q).
+    
+    Returns:
+    int: Optimal window size based on autocorrelation.
+    """
+    try:
+        model = ARIMA(data.iloc[:, 0], order=default_order)
+        model_fit = model.fit()
+        acf_values = model_fit.predict()
+        window_size = np.argmax(acf_values < 0.05)  # stopping where autocorrelation drops below 0.05
+        return max(window_size, 1)  # Ensure at least a window size of 1
+    except Exception:
+        return 10  # Fallback window size
+
+def intelligent_segmentation(data, window_size):
+    """
+    Segment data into adaptive windows.
+    
+    Parameters:
+    data (pd.DataFrame): Normalized data.
+    window_size (int): Optimal window size for segmentation.
+    
+    Returns:
+    list of pd.DataFrame: Segmented windows of data.
+    """
+    segments = [data.iloc[i:i+window_size] for i in range(0, len(data), window_size)]
+    return segments
+
+def feature_enhancement(segments):
+    """
+    Enhance features by adding rolling statistics like mean, variance, skewness, kurtosis.
+    
+    Parameters:
+    segments (list of pd.DataFrame): Segmented data.
+    
+    Returns:
+    list of pd.DataFrame: Segments with enhanced features.
+    """
+    enhanced_segments = []
+    for segment in segments:
+        stats = {
+            'mean': segment.mean(),
+            'variance': segment.var(),
+            'skewness': skew(segment),
+            'kurtosis': kurtosis(segment)
+        }
+        stats_df = pd.DataFrame(stats)
+        enhanced_segments.append(stats_df)
+    return enhanced_segments
+
+def adaptive_data_augmentation(segments, noise_factor=0.01):
+    """
+    Augment data by adding adaptive noise to each segment.
+    
+    Parameters:
+    segments (list of pd.DataFrame): Enhanced feature segments.
+    noise_factor (float): Factor to scale the added noise.
+    
+    Returns:
+    list of pd.DataFrame: Segments with added noise.
+    """
+    augmented_data = []
+    for segment in segments:
+        noise = np.random.normal(0, noise_factor, segment.shape)
+        augmented_segment = segment + noise
+        augmented_data.append(pd.DataFrame(augmented_segment, columns=segment.columns))
+    return augmented_data
+
+def preprocess(data):
+    """
+    Run the full preprocessing pipeline for ZAD-ML framework.
+    
+    Parameters:
+    data (pd.DataFrame): Original multivariate time series data.
+    
+    Returns:
+    dict: Preprocessed data at each stage (normalized, segmented, enhanced, augmented).
+    """
+    # Adaptive Normalization
+    normalized_data = adaptive_normalize(data)
+    
+    # Intelligent Segmentation
+    window_size = learn_window_size(normalized_data)
+    segments = intelligent_segmentation(normalized_data, window_size)
+    
+    # Feature Enhancement
+    enhanced_segments = feature_enhancement(segments)
+    
+    # Adaptive Data Augmentation
+    augmented_data = adaptive_data_augmentation(enhanced_segments)
+    
+    return {
+        'normalized': normalized_data,
+        'segmented': segments,
+        'enhanced': enhanced_segments,
+        'augmented': augmented_data
+    }
+
+# Example Usage
+if __name__ == "__main__":
+    # Generate example data
+    data = pd.DataFrame({
+        'feature1': np.random.randn(100),
+        'feature2': np.random.randn(100)
+    })
+    
+    # Run the preprocessing pipeline
+    preprocessed_data = preprocess(data)
+    
+    # Output each step for verification
+    for step, result in preprocessed_data.items():
+        print(f"\n--- {step.upper()} ---")
+        if isinstance(result, list):
+            for i, seg in enumerate(result[:3]):  # Show only first 3 segments for brevity
+                print(f"{step} {i+1}:\n{seg}\n")
+        else:
+            print(result.head())
+
+
+
+Explanation
+
+Adaptive Normalization: Calculates dynamic scaling factors and normalizes each feature based on these factors.
+
+Adaptive Intelligent Segmentation: Uses ARIMA to estimate the optimal window size, then segments data accordingly.
+
+Feature Enhancement: Applies rolling statistics and higher-order moments (mean, variance, skewness, and kurtosis) to each segment.
+
+Adaptive Data Augmentation: Adds controlled noise to each segment for augmentation, based on a noise_factor.
+
+Preprocessing Execution: Combines all steps in the preprocess() method, returning a fully preprocessed dataset.
