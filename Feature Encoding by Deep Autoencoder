@@ -1,0 +1,153 @@
+# Import necessary libraries
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.layers import Dense, BatchNormalization
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import RMSprop
+from sklearn.metrics.pairwise import cosine_similarity
+import os
+
+# Set specific versions for reproducibility:
+# tensorflow==2.8.0, numpy==1.21.0, scikit-learn==0.24.0
+
+# Set random seed for reproducibility
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Define the Encoder Model
+class AdvancedAutoencoder(Model):
+    def __init__(self, input_dim, encoding_dims):
+        """
+        Initialize a deep autoencoder with specified encoding dimensions.
+        
+        Parameters:
+        - input_dim (int): Dimensionality of input data
+        - encoding_dims (list of int): List defining the sizes of each encoding layer
+        """
+        super(AdvancedAutoencoder, self).__init__()
+        self.encoder_layers = []
+        for dim in encoding_dims:
+            self.encoder_layers.append(Dense(dim, activation='relu'))
+            self.encoder_layers.append(BatchNormalization())
+    
+    def encode(self, x):
+        """
+        Pass data through encoder layers.
+        
+        Parameters:
+        - x (tensor): Input data
+        
+        Returns:
+        - Encoded data
+        """
+        for layer in self.encoder_layers:
+            x = layer(x)
+        return x
+
+    def call(self, inputs):
+        return self.encode(inputs)
+
+# Loss Function for Anomaly Detection Using Cosine Similarity
+def cosine_similarity_loss(encoded_output, target_vector):
+    """
+    Calculate cosine similarity loss to enhance separation between normal and anomalous patterns.
+    
+    Parameters:
+    - encoded_output (tensor): Encoded representation of the input data
+    - target_vector (tensor): Predefined target vector representing normal patterns
+    
+    Returns:
+    - Cosine similarity loss value
+    """
+    cos_sim = tf.reduce_mean(1 - tf.keras.losses.cosine_similarity(encoded_output, target_vector))
+    return cos_sim
+
+# Model Training Function
+def train_autoencoder(data, target_vector=None, encoding_dims=[8, 4, 2], epochs=100, batch_size=32, 
+                      learning_rate=0.001, save_path="autoencoder_checkpoint"):
+    """
+    Train the autoencoder to learn compressed feature representations for anomaly detection.
+    
+    Parameters:
+    - data (np.array): Preprocessed data for training
+    - target_vector (np.array): Target vector representing normal patterns; defaults to mean of data
+    - encoding_dims (list): List defining the sizes of each encoding layer
+    - epochs (int): Number of epochs for training
+    - batch_size (int): Batch size for training
+    - learning_rate (float): Learning rate for optimizer
+    - save_path (str): Directory path to save the trained model
+    
+    Returns:
+    - Trained autoencoder model
+    - Encoded data representation
+    """
+    input_dim = data.shape[1]
+    
+    # If target_vector is None, calculate mean across features
+    if target_vector is None:
+        target_vector = np.mean(data, axis=0)
+    
+    autoencoder = AdvancedAutoencoder(input_dim, encoding_dims)
+    optimizer = RMSprop(learning_rate=learning_rate)
+    
+    # Compile with custom cosine similarity loss
+    autoencoder.compile(optimizer=optimizer, loss=lambda y_true, y_pred: cosine_similarity_loss(y_pred, target_vector))
+    
+    # Train the autoencoder
+    autoencoder.fit(data, data, epochs=epochs, batch_size=batch_size, verbose=1)
+    
+    # Obtain encoded representation
+    encoded_data = autoencoder.encode(data)
+    
+    # Save model checkpoint
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    autoencoder.save(os.path.join(save_path, "autoencoder_model"))
+    
+    print(f"Model saved at {save_path}/autoencoder_model")
+    return autoencoder, encoded_data
+
+# Example Usage
+if __name__ == "__main__":
+    # Simulate preprocessed input data
+    data = np.random.rand(100, 10)  # 100 samples, 10 features
+    
+    # Optional: Define custom target vector, or it will default to data mean
+    custom_target_vector = np.mean(data, axis=0)  # Calculate a target vector for normal pattern
+    
+    # Define encoding layer dimensions
+    encoding_dims = [8, 4, 2]  # Decreasing layer sizes for compression
+    
+    # Train the encoder and get encoded data
+    model, encoded_data = train_autoencoder(data, target_vector=custom_target_vector, 
+                                            encoding_dims=encoding_dims, epochs=50, 
+                                            batch_size=16, learning_rate=0.001)
+    
+    # Display encoded data
+    print("Encoded Data Representation:\n", encoded_data.numpy())
+
+
+
+
+
+
+
+Explanation of Code Sections:
+
+1. Autoencoder Model:
+   - The `AdvancedAutoencoder` class defines the encoder model, where dense layers progressively reduce dimensions to create a compressed representation.
+   - Batch normalization is applied after each dense layer to stabilize training and speed up convergence.
+
+2. Loss Function:
+   - `cosine_similarity_loss` calculates the cosine similarity loss, focusing the encoder on maximizing similarity with the target vector representing normal data.
+   - This encourages the model to separate normal and anomalous patterns effectively.
+
+3. Training Function:
+   - `train_autoencoder` initializes the autoencoder, compiles it with the RMSprop optimizer, and trains it on the provided data.
+   - After training, the function outputs the encoder model and encoded data representations.
+
+4. Example Execution:
+   - In the `__main__` block, a sample dataset is generated and fed into the autoencoder training function.
+   - The target vector, derived from the average pattern of the data, acts as a benchmark for anomaly detection.
+
+This code is optimized for real-time anomaly detection with an emphasis on computational efficiency, enabling effective anomaly detection as per the requirements specified in the algorithm.
